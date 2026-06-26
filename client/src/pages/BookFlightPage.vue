@@ -79,21 +79,34 @@ function toggleSection(key) {
 }
 
 // ── Airport resolution ─────────────────────────────────────────────────────
-async function fetchAirport(id) {
+// Always stringify IDs — MongoDB can return ObjectId objects, not plain strings,
+// which causes cache key mismatches (objectA !== objectA.toString()).
+async function fetchAirport(rawId) {
+    const id = rawId ? String(rawId) : null;
     if (!id) return null;
     if (airportCache.value[id]) return airportCache.value[id];
     try {
         const res = await getAirportById(id);
+        // api.js wraps response: { message, result: { airport } }
         const airport = res.result ?? res ?? null;
-        if (airport) airportCache.value[id] = airport;
+        if (airport && airport.iataCode) airportCache.value[id] = airport;
         return airport;
     } catch { return null; }
 }
 
-function airportLabel(id) {
+function airportLabel(rawId) {
+    const id = rawId ? String(rawId) : null;
     const a = airportCache.value[id];
     if (!a) return id ? '…' : '—';
-    return a.iataCode ? `${a.city} (${a.iataCode})` : (a.city || a.name || '—');
+    return a.iataCode ? `${a.iataCode}` : (a.city || a.name || '—');
+}
+
+// Full label with city name — used in Selected Flights card
+function airportFullLabel(rawId) {
+    const id = rawId ? String(rawId) : null;
+    const a = airportCache.value[id];
+    if (!a) return id ? '…' : '—';
+    return a.city ? `${a.city} (${a.iataCode})` : (a.iataCode || '—');
 }
 
 onMounted(async () => {
@@ -130,11 +143,12 @@ onMounted(async () => {
                 }
             }
 
-            // Fetch all unique airports used across all flights
+            // Fetch all unique airports used across all flights.
+            // String() ensures ObjectId objects don't create duplicate cache keys.
             const airportIds = new Set();
             for (const f of flightsCollector) {
-                if (f.originAirportId)      airportIds.add(f.originAirportId);
-                if (f.destinationAirportId) airportIds.add(f.destinationAirportId);
+                if (f.originAirportId)      airportIds.add(String(f.originAirportId));
+                if (f.destinationAirportId) airportIds.add(String(f.destinationAirportId));
             }
             await Promise.allSettled([...airportIds].map(fetchAirport));
 
@@ -302,13 +316,10 @@ function validateAndContinue() {
 }
 
 // ── Leg label ──────────────────────────────────────────────────────────────
-// Uses real airport IATA codes from the cache fetched on mount.
-// Multi-leg: index 0 = "Departure Flight", index 1 = "Return Flight".
-// Single leg: no prefix, just the route.
 function legLabel(flight, i) {
     if (!flight) return 'Flight';
-    const origin = airportLabel(flight.originAirportId);
-    const dest   = airportLabel(flight.destinationAirportId);
+    const origin = airportFullLabel(flight.originAirportId);
+    const dest   = airportFullLabel(flight.destinationAirportId);
     const dateLabel = flight.departureTime
         ? new Date(flight.departureTime).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })
         : '';
@@ -318,11 +329,13 @@ function legLabel(flight, i) {
     return `${prefix}${origin} → ${dest} · ${dateLabel} · ${flight.flightNumber || ''}`;
 }
 
-// Short label for the leg tab button — just "Departure" / "Return" + route
+// Short label for leg tab buttons
 function legTabLabel(flight, i) {
     if (!flight) return `Flight ${i + 1}`;
-    const origin = airportCache.value[flight.originAirportId]?.iataCode || '???';
-    const dest   = airportCache.value[flight.destinationAirportId]?.iataCode || '???';
+    const originId = String(flight.originAirportId || '');
+    const destId   = String(flight.destinationAirportId || '');
+    const origin = airportCache.value[originId]?.iataCode || '???';
+    const dest   = airportCache.value[destId]?.iataCode   || '???';
     const prefix = flightsMap.value.length > 1
         ? (i === 0 ? 'Departure' : 'Return')
         : flight.flightNumber || `Flight ${i + 1}`;
