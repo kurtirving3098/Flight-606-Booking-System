@@ -5,7 +5,7 @@ import {
   getMyBookingsUser, getMyBookingsGuest,
   cancelBookingUser, cancelBookingGuest,
   getFlightById, getAirportById,
-  getBookingPassengerByBooking, getSeatById
+  getPassengersByBooking, getSeatById
 } from '../api.js'
 
 const globalStore = useGlobalStore()
@@ -58,7 +58,7 @@ async function enrich(bookingsList) {
       // Fetch flight + booking-passenger record in parallel
       const [flightRes, bkpRes] = await Promise.allSettled([
         getFlightById(b.flightId),
-        getBookingPassengerByBooking(b._id)
+        getPassengersByBooking(b._id)
       ])
 
       const flight = flightRes.status === 'fulfilled' ? (flightRes.value.result ?? null) : null
