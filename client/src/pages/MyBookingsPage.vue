@@ -5,7 +5,8 @@ import {
   getMyBookingsUser, getMyBookingsGuest,
   cancelBookingUser, cancelBookingGuest,
   getFlightById, getAirportById,
-  getPassengersByBooking, getSeatById
+  getPassengersByBooking, getSeatById,
+  getMyPassengers
 } from '../api.js'
 
 const globalStore = useGlobalStore()
@@ -17,6 +18,9 @@ const hasSearched = ref(false)
 const errorMsg = ref('')
 const guestEmailInput = ref('')
 const cancellingRef = ref('')
+// Pre-loaded passenger profiles for name resolution
+// (BookingPassenger.passengerId comes back as a raw ID string, not populated)
+const savedPassengersMap = ref({})  // { [passengerId]: passengerObject }
 
 function formatTime(dt) {
   if (!dt) return '—'
@@ -48,7 +52,7 @@ function passengerName(p) {
   return '—'
 }
 function isUpcoming(booking) {
-  const dep = booking.flightId?.departureTime
+  const dep = booking.flight?.departureTime || booking.flightId?.departureTime
   return dep ? new Date(dep) > new Date() : true
 }
 
@@ -91,9 +95,12 @@ async function enrich(bookingsList) {
         const bkp = records.find(r => r.isActive) ?? records[0] ?? null
         if (bkp) {
           ticketNumber = bkp.ticketNumber ?? null
-          // Passenger name is embedded on the bkp record via population, or we
-          // fall back to the passengerId object if the API returns it populated
-          passenger = bkp.passengerId ?? null
+          // passengerId comes back as a raw ObjectId string — not a populated object.
+          // Look it up in the pre-loaded savedPassengersMap (keyed by string ID).
+          const pid = bkp.passengerId ? String(bkp.passengerId) : null
+          passenger = (pid && savedPassengersMap.value[pid])
+            ? savedPassengersMap.value[pid]
+            : (typeof bkp.passengerId === 'object' ? bkp.passengerId : null)
           if (bkp.seatId) {
             try {
               const seatRes = await getSeatById(bkp.seatId)
@@ -170,8 +177,16 @@ async function cancelBooking(booking) {
   }
 }
 
-onMounted(() => {
-  if (isLoggedIn.value) loadMyBookings()
+onMounted(async () => {
+  if (isLoggedIn.value) {
+    // Pre-load saved passengers so enrich() can resolve names from raw IDs
+    try {
+      const res = await getMyPassengers()
+      const list = res?.passengers || res?.result || []
+      list.forEach(p => { savedPassengersMap.value[String(p._id)] = p })
+    } catch { /* non-fatal — names will show — if unavailable */ }
+    loadMyBookings()
+  }
 })
 </script>
 
@@ -261,6 +276,13 @@ onMounted(() => {
                   class="fc-select-btn d-block text-center text-decoration-none w-100"
                   style="padding: 6px 0;"
                 >Check-in</RouterLink>
+
+                <RouterLink
+                  v-if="booking.status !== 'cancelled' && booking.flight?._id"
+                  :to="{ name: 'SearchFlights' }"
+                  class="fc-select-btn d-block text-center text-decoration-none w-100"
+                  style="padding: 6px 0;"
+                >Rebook</RouterLink>
 
                 <button
                   v-if="booking.status !== 'cancelled' && !booking.checkedIn"
