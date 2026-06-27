@@ -278,8 +278,17 @@ onMounted(async () => {
                 >Check-in</RouterLink>
 
                 <RouterLink
-                  v-if="booking.status !== 'cancelled' && booking.flight?._id"
-                  :to="{ name: 'SearchFlights' }"
+                  v-if="booking.status !== 'cancelled' && booking.flight"
+                  :to="{
+                    name: 'SearchFlights',
+                    query: {
+                      originAirportId: booking.flight.originAirportId,
+                      destinationAirportId: booking.flight.destinationAirportId,
+                      departureDate: booking.flight.departureTime
+                        ? new Date(booking.flight.departureTime).toISOString().slice(0, 10)
+                        : undefined
+                    }
+                  }"
                   class="fc-select-btn d-block text-center text-decoration-none w-100"
                   style="padding: 6px 0;"
                 >Rebook</RouterLink>
@@ -294,33 +303,68 @@ onMounted(async () => {
               </div>
             </div>
 
-            <!-- Passenger / Seat / Ticket strip — full width row below the flight bar -->
-            <div class="w-100 d-flex flex-wrap gap-4 px-3 pb-3 pt-2" style="border-top: 1px solid rgba(255,255,255,0.08); font-size: 0.82rem;">
-              <div>
-                <span style="opacity:0.55;">Passenger</span><br>
-                <span class="fw-semibold">{{ passengerName(booking.passenger) }}</span>
+            <!-- Expanded booking details — two-row grid matching reference design -->
+            <div class="w-100 px-3 pb-3 pt-3" style="border-top: 1px solid rgba(255,255,255,0.08); font-size: 0.82rem;">
+
+              <!-- Row 1: Flight · Passenger · Seat · Ticket No. · Terminals -->
+              <div class="row g-3 mb-3">
+                <div class="col-6 col-md-4">
+                  <div style="opacity:0.55; text-transform:uppercase; font-size:0.7rem; letter-spacing:0.05em;">Flight</div>
+                  <div class="fw-semibold">
+                    {{ booking.flight?.flightNumber || '—' }}
+                    <span v-if="booking.flight?.airlineId?.name" style="opacity:0.65;">· {{ booking.flight.airlineId.name }}</span>
+                  </div>
+                </div>
+
+                <div class="col-6 col-md-4">
+                  <div style="opacity:0.55; text-transform:uppercase; font-size:0.7rem; letter-spacing:0.05em;">Passenger</div>
+                  <div class="fw-semibold">{{ passengerName(booking.passenger) }}</div>
+                </div>
+
+                <div class="col-6 col-md-4">
+                  <div style="opacity:0.55; text-transform:uppercase; font-size:0.7rem; letter-spacing:0.05em;">Seat</div>
+                  <div class="fw-semibold">
+                    <span v-if="booking.seat">
+                      {{ booking.seat.seatNumber }}
+                      <span class="badge ms-1" :class="seatClassBadge(booking.seat.class)" style="font-size:0.7rem; text-transform:capitalize;">
+                        {{ booking.seat.class }}
+                      </span>
+                    </span>
+                    <span v-else>—</span>
+                  </div>
+                </div>
+
+                <div class="col-6 col-md-4">
+                  <div style="opacity:0.55; text-transform:uppercase; font-size:0.7rem; letter-spacing:0.05em;">Ticket No.</div>
+                  <div class="font-monospace fw-semibold">{{ booking.ticketNumber || '—' }}</div>
+                </div>
+
+                <div class="col-6 col-md-4">
+                  <div style="opacity:0.55; text-transform:uppercase; font-size:0.7rem; letter-spacing:0.05em;">Departure Terminal</div>
+                  <div class="fw-semibold">{{ booking.flight?.originTerminal ? 'Terminal T' + booking.flight.originTerminal : '—' }}</div>
+                </div>
+
+                <div class="col-6 col-md-4">
+                  <div style="opacity:0.55; text-transform:uppercase; font-size:0.7rem; letter-spacing:0.05em;">Arrival Terminal</div>
+                  <div class="fw-semibold">{{ booking.flight?.destinationTerminal ? 'Terminal T' + booking.flight.destinationTerminal : '—' }}</div>
+                </div>
               </div>
-              <div>
-                <span style="opacity:0.55;">Seat</span><br>
-                <span v-if="booking.seat" class="fw-semibold">
-                  {{ booking.seat.seatNumber }}
-                  <span class="badge ms-1" :class="seatClassBadge(booking.seat.class)" style="font-size:0.7rem;">
-                    {{ booking.seat.class }}
-                  </span>
-                </span>
-                <span v-else>—</span>
+
+              <!-- Row 2: Departure → Arrival time/date bar -->
+              <div class="d-flex align-items-center gap-3 pt-2" style="border-top: 1px solid rgba(255,255,255,0.06);">
+                <div>
+                  <div style="opacity:0.55; text-transform:uppercase; font-size:0.7rem; letter-spacing:0.05em;">Departure</div>
+                  <div class="fw-bold" style="font-size:1.1rem;">{{ formatTime(booking.flight?.departureTime) }}</div>
+                  <div style="opacity:0.6; font-size:0.75rem;">{{ formatDateLabel(booking.flight?.departureTime) }}</div>
+                </div>
+                <div style="opacity:0.5; font-size:1.2rem; padding: 0 4px;">→</div>
+                <div>
+                  <div style="opacity:0.55; text-transform:uppercase; font-size:0.7rem; letter-spacing:0.05em;">Arrival</div>
+                  <div class="fw-bold" style="font-size:1.1rem; color: var(--gold, #c9a84c);">{{ formatTime(booking.flight?.arrivalTime) }}</div>
+                  <div style="opacity:0.6; font-size:0.75rem;">{{ formatDateLabel(booking.flight?.arrivalTime) }}</div>
+                </div>
               </div>
-              <div>
-                <span style="opacity:0.55;">Ticket No.</span><br>
-                <span class="font-monospace fw-semibold">{{ booking.ticketNumber || '—' }}</span>
-              </div>
-              <div v-if="booking.flight?.originTerminal || booking.flight?.destinationTerminal">
-                <span style="opacity:0.55;">Terminals</span><br>
-                <span class="fw-semibold">
-                  {{ booking.flight?.originTerminal ? 'T' + booking.flight.originTerminal : '—' }}
-                  → {{ booking.flight?.destinationTerminal ? 'T' + booking.flight.destinationTerminal : '—' }}
-                </span>
-              </div>
+
             </div>
 
           </div>
